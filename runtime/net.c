@@ -1208,7 +1208,7 @@ void closeUDPListenSockets(int *pSockArr)
  * 1 - server, 0 - client
  * param rcvbuf indicates desired rcvbuf size; 0 means OS default
  */
-int *create_udp_socket(uchar *hostname, uchar *pszPort, int bIsServer, int rcvbuf)
+int *create_udp_socket(uchar *hostname, uchar *pszPort, int bIsServer, int rcvbuf, int ipfreebind)
 {
         struct addrinfo hints, *res, *r;
         int error, maxs, *s, *socks, on = 1;
@@ -1360,7 +1360,18 @@ int *create_udp_socket(uchar *hostname, uchar *pszPort, int bIsServer, int rcvbu
 			     && (errno != EADDRINUSE)
 	#		endif
 			   ) {
-				errmsg.LogError(errno, NO_ERRCODE, "bind");
+				if (errno == EADDRNOTAVAIL && ipfreebind != IPFREEBIND_DISABLED) {
+					if (setsockopt(*s, IPPROTO_IP, IP_FREEBIND, &on, sizeof(on)) < 0) {
+						errmsg.LogError(errno, NO_ERRCODE, "setsockopt(IP_FREEBIND)");
+					}
+					else if (bind(*s, r->ai_addr, r->ai_addrlen) < 0) {
+						errmsg.LogError(errno, NO_ERRCODE, "bind with IP_FREEBIND");
+					} else {
+						if (ipfreebind >= IPFREEBIND_ENABLED_WITH_LOG)
+							errmsg.LogMsg(0, RS_RET_OK_WARN, LOG_WARNING, "bound address %s IP free", hostname);
+						continue;
+					}
+				}
 				close(*s);
 				*s = -1;
 				continue;
